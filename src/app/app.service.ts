@@ -24,8 +24,16 @@ export class AppService {
     return createdGame.save();
   }
 
-  public async ensureNoGameIsCreated(creatorId: string): Promise<void> {
+  public async deleteGameByCreatorId(creatorId: string): Promise<void> {
     await this.gameModel.findOneAndDelete({ creatorId });
+  }
+
+  public async deleteGameById(id: string): Promise<void> {
+    await this.gameModel.findByIdAndDelete(id);
+  }
+
+  public async findGameByParticipant(userId: string): Promise<GameDocument | null> {
+    return this.gameModel.findOne({ $or: [{ creatorId: userId }, { invitedId: userId }] });
   }
 
   public async findGame(id: string): Promise<GameDocument | null> {
@@ -46,9 +54,9 @@ export class AppService {
       return;
     }
     if (game.creatorId === userId) {
-      await game.update({ creatorShips: ships });
+      await game.updateOne({ creatorShips: ships });
     } else if (game.invitedId === userId) {
-      await game.update({ invitedShips: ships });
+      await game.updateOne({ invitedShips: ships });
     }
   }
 

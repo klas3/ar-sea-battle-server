@@ -3,12 +3,13 @@ import {
   OnGatewayConnection,
   WebSocketServer,
   SubscribeMessage,
+  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Socket, Server } from 'socket.io';
 import { AppService } from './app.service';
 
 @WebSocketGateway()
-export class AppGateway implements OnGatewayConnection {
+export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(private readonly appService: AppService) {}
 
   @WebSocketServer()
@@ -17,30 +18,40 @@ export class AppGateway implements OnGatewayConnection {
   private readonly clients: Map<string, Socket> = new Map<string, Socket>();
 
   public handleConnection(client: Socket) {
-    client.emit('connection');
+    const userId = client.handshake.query.userId as string;
+    if (!userId) {
+      return;
+    }
+    this.clients.set(userId, client);
   }
 
-  @SubscribeMessage('addClient')
-  public addClient(client: Socket, clientInfo: { gameId: string; userId: string }) {
-    const { gameId, userId } = clientInfo;
-    client.join(gameId);
-    this.clients.set(userId, client);
+  public async handleDisconnect(client: Socket) {
+    const userId = client.handshake.query.userId as string;
+    if (!userId) {
+      return;
+    }
+    this.clients.delete(userId);
+    const game = await this.appService.findGameByParticipant(userId);
+    if (!game) {
+      return;
+    }
+    client.leave(game.id);
+    await this.appService.deleteGameById(game.id);
+    this.server.to(game.id).emit('victory');
   }
 
   public connectToGame(gameId: string, userId: string) {
     const client = this.clients.get(userId);
-    if (!client) {
-      return;
+    if (client) {
+      client.join(gameId);
     }
-    client.join(gameId);
   }
 
   public disconnectFromGame(gameId: string, userId: string) {
     const client = this.clients.get(userId);
-    if (!client) {
-      return;
+    if (client) {
+      client.leave(gameId);
     }
-    client.leave(gameId);
   }
 
   public startArrangement(gameId: string) {
@@ -51,22 +62,24 @@ export class AppGateway implements OnGatewayConnection {
     this.server.to(gameId).emit('startGame');
   }
 
+  // public emitGameEnd(gameId: string, winnerId: string, looserId: string) {}
+
   @SubscribeMessage('arrangeShips')
   public async arrangeShips(
     _: Socket,
-    clientInfo: { gameId: string; userId: string; ships: number[] },
+    clientInfo: { gameCode: string; userId: string; ships: number[] },
   ): Promise<void> {
-    const { gameId, ships, userId } = clientInfo;
-    const game = await this.appService.findGame(gameId);
+    const { gameCode, ships, userId } = clientInfo;
+    const game = await this.appService.findGameByCode(gameCode);
     // TODO validate arranged ships
     if (!game || game.isStarted) {
       return;
     }
-    await this.appService.setArrangedShips(gameId, userId, ships);
-    const areShipsArranged = this.appService.areShipsArranged(gameId);
+    await this.appService.setArrangedShips(game.id, userId, ships);
+    const areShipsArranged = await this.appService.areShipsArranged(game.id);
     if (areShipsArranged) {
-      await this.appService.startGame(gameId);
-      this.startGame(gameId);
+      await this.appService.startGame(game.id);
+      this.startGame(game.id);
     }
   }
 }

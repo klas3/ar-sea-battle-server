@@ -1,5 +1,4 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Post } from '@nestjs/common';
-import { GameDocument } from '../schemas/game.schema';
 import { AppService } from './app.service';
 import { AppGateway } from './app.gateway';
 
@@ -8,14 +7,14 @@ export class AppController {
   constructor(private readonly appService: AppService, private readonly appGateway: AppGateway) {}
 
   @Post('createGame')
-  public async createGame(@Body('creatorId') creatorId: string): Promise<GameDocument> {
+  public async createGame(@Body('creatorId') creatorId: string): Promise<{ code: string }> {
     if (!creatorId) {
       throw new BadRequestException('creatorId was not provided');
     }
-    await this.appService.ensureNoGameIsCreated(creatorId);
+    await this.appService.deleteGameByCreatorId(creatorId);
     const game = await this.appService.createGame(creatorId);
     this.appGateway.connectToGame(game.id, creatorId);
-    return game;
+    return { code: game.code };
   }
 
   @Post('joinGame')
@@ -28,13 +27,14 @@ export class AppController {
     }
     const game = await this.appService.findGameByCode(code);
     if (!game) {
-      throw new BadRequestException('the provided game code was invalid');
+      throw new BadRequestException('The provided game code was invalid');
     }
     if (game.invitedId) {
-      throw new ForbiddenException('this game is full now');
+      throw new ForbiddenException('This game is full now');
     }
     await this.appService.joinGame(code, invitedId);
     this.appGateway.connectToGame(game.id, invitedId);
+    this.appGateway.startArrangement(game.id);
     return;
   }
 }
