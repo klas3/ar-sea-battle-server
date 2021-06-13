@@ -29,8 +29,15 @@ export class AppController {
     if (!game) {
       throw new BadRequestException('The provided game code was invalid');
     }
+    if (game.creatorId === invitedId) {
+      throw new ForbiddenException('You cannot join to your own game');
+    }
     if (game.invitedId) {
       throw new ForbiddenException('This game is full now');
+    }
+    const invitedUserGame = await this.appService.findGameByParticipant(invitedId);
+    if (invitedUserGame) {
+      await invitedUserGame.deleteOne();
     }
     await this.appService.joinGame(code, invitedId);
     this.appGateway.connectToGame(game.id, invitedId);

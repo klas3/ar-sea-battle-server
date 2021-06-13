@@ -66,13 +66,14 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('arrangeShips')
   public async arrangeShips(
-    _: Socket,
+    client: Socket,
     clientInfo: { gameCode: string; userId: string; ships: number[] },
   ): Promise<void> {
     const { gameCode, ships, userId } = clientInfo;
     const game = await this.appService.findGameByCode(gameCode);
-    // TODO validate arranged ships
-    if (!game || game.isStarted) {
+    const arePositionsValid =
+      !clientInfo.ships.length || this.appService.validateShipsPositions(clientInfo.ships);
+    if (!game || game.isStarted || !arePositionsValid) {
       return;
     }
     await this.appService.setArrangedShips(game.id, userId, ships);
@@ -80,6 +81,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (areShipsArranged) {
       await this.appService.startGame(game.id);
       this.startGame(game.id);
+      return;
     }
+    if (!clientInfo.ships.length) {
+      client.emit('startArrangement');
+      return;
+    }
+    client.emit('waitingForOpponent');
   }
 }
