@@ -62,8 +62,6 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(gameId).emit('startGame', movingUserId);
   }
 
-  // public emitGameEnd(gameId: string, winnerId: string, looserId: string) {}
-
   @SubscribeMessage('arrangeShips')
   public async arrangeShips(
     client: Socket,
