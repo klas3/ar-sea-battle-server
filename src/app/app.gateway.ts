@@ -58,8 +58,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(gameId).emit('startArrangement');
   }
 
-  public startGame(gameId: string) {
-    this.server.to(gameId).emit('startGame');
+  public async startGame(gameId: string, movingUserId: string) {
+    this.server.to(gameId).emit('startGame', movingUserId);
   }
 
   // public emitGameEnd(gameId: string, winnerId: string, looserId: string) {}
@@ -80,7 +80,11 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const areShipsArranged = await this.appService.areShipsArranged(game.id);
     if (areShipsArranged) {
       await this.appService.startGame(game.id);
-      this.startGame(game.id);
+      const startedGame = await this.appService.findGame(game.id);
+      if (!startedGame) {
+        return;
+      }
+      this.startGame(game.id, startedGame.movingUserId);
       return;
     }
     if (!clientInfo.ships.length) {
@@ -88,5 +92,34 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     client.emit('waitingForOpponent');
+  }
+
+  @SubscribeMessage('shoot')
+  public async handleShooting(
+    _: Socket,
+    info: {
+      position: number;
+      userId: string;
+      gameCode: string;
+    },
+  ) {
+    const { gameCode, position, userId } = info;
+    const game = await this.appService.findGameByCode(gameCode);
+    if (!game) {
+      return;
+    }
+    if (game.movingUserId !== userId || !game.isStarted) {
+      return;
+    }
+    const isUserCreator = game.creatorId === userId;
+    const userShots = isUserCreator ? game.creatorFieldShots : game.invitedFieldShots;
+    userShots[position] = 1;
+    const enemyShips = isUserCreator ? game.invitedShips : game.creatorShips;
+    const positionInfo = enemyShips[position];
+    if (positionInfo === -1) {
+      game.movingUserId = isUserCreator ? game.invitedId : game.creatorId;
+    }
+    await game.save();
+    this.server.to(game.id).emit('nextMove', { position, positionInfo });
   }
 }

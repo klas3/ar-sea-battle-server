@@ -12,14 +12,13 @@ export class AppService {
   constructor(@InjectModel(Game.name) private gameModel: Model<GameDocument>) {}
 
   public async createGame(creatorId: string): Promise<GameDocument> {
-    const emptyShots = Array(this.fieldLength).fill(0);
+    const emptyShots = new Array(this.fieldLength).fill(0);
     const game = {
       creatorId,
-      movingUserId: creatorId,
       code: generateCode(),
       isGameStarted: false,
-      creatorShots: emptyShots,
-      invitedShots: emptyShots,
+      creatorFieldShots: emptyShots,
+      invitedFieldShots: emptyShots,
     };
     const createdGame = new this.gameModel(game);
     return createdGame.save();
@@ -70,7 +69,13 @@ export class AppService {
   }
 
   public async startGame(gameId: string): Promise<void> {
-    await this.gameModel.findByIdAndUpdate(gameId, { isStarted: true });
+    const game = await this.gameModel.findById(gameId);
+    if (!game) {
+      return;
+    }
+    const players = [game.creatorId, game.invitedId];
+    const movingUserId = players[Math.round(Math.random())];
+    await game.updateOne({ movingUserId, isStarted: true });
   }
 
   public validateShipsPositions(arrangedPositions: number[]): boolean {
