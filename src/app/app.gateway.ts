@@ -62,6 +62,19 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(gameId).emit('startGame', movingUserId);
   }
 
+  public emitGameEnd(gameId: string, winnerId: string, looserId: string) {
+    const winner = this.clients.get(winnerId);
+    if (winner) {
+      winner.emit('victory');
+      winner.leave(gameId);
+    }
+    const loser = this.clients.get(looserId);
+    if (loser) {
+      loser.emit('defeat');
+      loser.leave(gameId);
+    }
+  }
+
   @SubscribeMessage('arrangeShips')
   public async arrangeShips(
     client: Socket,
@@ -117,7 +130,24 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (positionInfo === -1) {
       game.movingUserId = isUserCreator ? game.invitedId : game.creatorId;
     }
-    await game.save();
+    const isUserWon = enemyShips.every(
+      (shipIndex, index) => shipIndex === -1 || (shipIndex !== -1 && userShots[index] === 1),
+    );
+    if (isUserWon) {
+      this.emitGameEnd(
+        game.id,
+        isUserCreator ? game.creatorId : game.invitedId,
+        isUserCreator ? game.invitedId : game.creatorId,
+      );
+      await game.remove();
+      return;
+    }
+    if (isUserCreator) {
+      game.creatorFieldShots = userShots;
+    } else {
+      game.invitedFieldShots = userShots;
+    }
+    await game.updateOne(game);
     this.server.to(game.id).emit('nextMove', { position, positionInfo });
   }
 }
